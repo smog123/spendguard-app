@@ -1,0 +1,42 @@
+{
+  "name": "@spendguard/sdk",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./types": {
+      "types": "./dist/types.d.ts",
+      "import": "./dist/types.js"
+    },
+    "./soroban-client": {
+      "types": "./dist/soroban-client.d.ts",
+      "import": "./dist/soroban-client.js"
+    },
+    "./policy-reader": {
+      "types": "./dist/policy-reader.d.ts",
+      "import": "./dist/policy-reader.js"
+    },
+    "./xdr-helpers": {
+      "types": "./dist/xdr-helpers.d.ts",
+      "import": "./dist/xdr-helpers.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@stellar/stellar-sdk": "^16.2.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.0",
+    "vitest": "^3.0.0"
+  }
+}

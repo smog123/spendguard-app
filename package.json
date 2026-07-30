@@ -1,0 +1,29 @@
+{
+  "name": "spendguard-app",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Monitoring layer for Soroban x402 spending limits — reads public on-chain data and computes whether a spend pattern is approaching or has crossed a limit enforced by OpenZeppelin's smart account.",
+  "workspaces": [
+    "packages/*",
+    "indexer",
+    "apps/*"
+  ],
+  "scripts": {
+    "build:sdk": "npm -w packages/sdk run build",
+    "build:indexer": "npm -w indexer run build",
+    "build:web": "npm -w apps/web run build",
+    "build": "npm run build:sdk && npm run build:indexer && npm run build:web",
+    "typecheck": "tsc --noEmit --project packages/sdk/tsconfig.json && tsc --noEmit --project indexer/tsconfig.json && tsc --noEmit --project apps/web/tsconfig.json",
+    "lint": "eslint 'packages/*/src/**/*.ts' 'indexer/src/**/*.ts' 'apps/web/**/*.{ts,tsx}'",
+    "test": "npm -w packages/sdk run test && npm -w indexer run test && npm -w apps/web run test"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "eslint": "^9.0.0",
+    "prettier": "^3.4.0",
+    "typescript": "^5.7.0"
+  },
+  "engines": {
+    "node": ">=18.18.0"
+  }
+}

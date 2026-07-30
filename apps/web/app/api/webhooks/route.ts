@@ -1,0 +1,192 @@
+/**
+ * API route for webhook configuration management.
+ *
+ * GET  /api/webhooks — list all webhook configs (secrets masked)
+ * POST /api/webhooks — create or update a webhook config
+ * DELETE /api/webhooks?id=... — delete a webhook config
+ */
+
+import { NextResponse } from "next/server";
+import postgres from "postgres";
+
+// ── Helpers ───────────────────────────────────────────────────────────
+
+function getDb(): postgres.Sql {
+  const databaseUrl = process.env.DATABASE_URL;
+  if (!databaseUrl) {
+    throw new Error("DATABASE_URL is not configured");
+  }
+  return postgres(databaseUrl, { max: 2, idle_timeout: 10 });
+}
+
+function maskSecret(secret: string | null): string | null {
+  if (!secret || secret.length < 8) return secret;
+  return secret.slice(0, 4) + "…" + secret.slice(-4);
+}
+
+// ── GET ───────────────────────────────────────────────────────────────
+
+export async function GET(): Promise<NextResponse> {
+  try {
+    const sql = getDb();
+
+    const configs = await sql`
+      SELECT id, url, secret, alert_levels, enabled, created_at, updated_at
+      FROM webhook_configs
+      ORDER BY created_at DESC
+    `;
+
+    const mapped = configs.map((c) => ({
+      id: c.id as string,
+      url: c.url as string,
+      secret: maskSecret((c.secret as string | null) ?? null),
+      alertLevels: c.alert_levels as string[],
+      enabled: c.enabled as boolean,
+      createdAt: (c.created_at as Date).toISOString(),
+      updatedAt: (c.updated_at as Date).toISOString(),
+    }));
+
+    await sql.end({ timeout: 3 });
+    return NextResponse.json(mapped);
+  } catch (err) {
+    console.error("GET /api/webhooks error:", err);
+    return NextResponse.json(
+      { error: "Internal server error" },
+      { status: 500 },
+    );
+  }
+}
+
+// ── POST ──────────────────────────────────────────────────────────────
+
+export async function POST(request: Request): Promise<NextResponse> {
+  try {
+    const body = (await request.json()) as {
+      id?: string;
+      url: string;
+      secret?: string;
+      alertLevels?: string[];
+      enabled?: boolean;
+    };
+
+    if (!body.url) {
+      return NextResponse.json(
+        { error: "Missing required field: url" },
+        { status: 400 },
+      );
+    }
+
+    // Basic URL validation
+    try {
+      new URL(body.url);
+    } catch {
+      return NextResponse.json(
+        { error: "Invalid URL format" },
+        { status: 400 },
+      );
+    }
+
+    const alertLevels = body.alertLevels ?? ["near_miss", "breach"];
+    const validLevels = alertLevels.every((l) =>
+      ["near_miss", "breach"].includes(l),
+    );
+    if (!validLevels) {
+      return NextResponse.json(
+        { error: "Invalid alert level; must be 'near_miss' or 'breach'" },
+        { status: 400 },
+      );
+    }
+
+    const sql = getDb();
+
+    if (body.id) {
+      // Update existing webhook
+      const result = await sql`
+        UPDATE webhook_configs SET
+          url = ${body.url},
+          secret = COALESCE(${body.secret ?? null}, secret),
+          alert_levels = ${alertLevels},
+          enabled = COALESCE(${body.enabled ?? true}, enabled),
+          updated_at = now()
+        WHERE id = ${body.id}
+        RETURNING id, url, alert_levels, enabled, created_at, updated_at
+      `;
+
+      if (result.length === 0) {
+        await sql.end({ timeout: 3 });
+        return NextResponse.json(
+          { error: "Webhook config not found" },
+          { status: 404 },
+        );
+      }
+
+      const row = result[0]!;
+      await sql.end({ timeout: 3 });
+
+      return NextResponse.json({
+        id: row.id as string,
+        url: row.url as string,
+        alertLevels: row.alert_levels as string[],
+        enabled: row.enabled as boolean,
+        createdAt: (row.created_at as Date).toISOString(),
+        updatedAt: (row.updated_at as Date).toISOString(),
+      });
+    }
+
+    // Create new webhook
+    const result = await sql`
+      INSERT INTO webhook_configs (url, secret, alert_levels, enabled)
+      VALUES (${body.url}, ${body.secret ?? null}, ${alertLevels}, ${body.enabled ?? true})
+      RETURNING id, url, alert_levels, enabled, created_at, updated_at
+    `;
+
+    const row = result[0]!;
+    await sql.end({ timeout: 3 });
+
+    return NextResponse.json(
+      {
+        id: row.id as string,
+        url: row.url as string,
+        alertLevels: row.alert_levels as string[],
+        enabled: row.enabled as boolean,
+        createdAt: (row.created_at as Date).toISOString(),
+        updatedAt: (row.updated_at as Date).toISOString(),
+      },
+      { status: 201 },
+    );
+  } catch (err) {
+    console.error("POST /api/webhooks error:", err);
+    return NextResponse.json(
+      { error: "Internal server error" },
+      { status: 500 },
+    );
+  }
+}
+
+// ── DELETE ────────────────────────────────────────────────────────────
+
+export async function DELETE(request: Request): Promise<NextResponse> {
+  try {
+    const { searchParams } = new URL(request.url);
+    const id = searchParams.get("id");
+
+    if (!id) {
+      return NextResponse.json(
+        { error: "Missing required query param: id" },
+        { status: 400 },
+      );
+    }
+
+    const sql = getDb();
+    await sql`DELETE FROM webhook_configs WHERE id = ${id}`;
+    await sql.end({ timeout: 3 });
+
+    return NextResponse.json({ deleted: true });
+  } catch (err) {
+    console.error("DELETE /api/webhooks error:", err);
+    return NextResponse.json(
+      { error: "Internal server error" },
+      { status: 500 },
+    );
+  }
+}
