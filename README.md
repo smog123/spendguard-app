@@ -1,6 +1,6 @@
 # SpendGuard — Spending Limit Monitor
 
-**SpendGuard** is an indexer and dashboard that continuously ingests Soroban events for [x402](https://github.com/stellar/x402) settlements, cross-references them against spending-limit policy state, and raises breach/near-miss alerts via a dashboard and webhook.
+**SpendGuard** is an indexer and dashboard that continuously ingests Soroban events for [x402](https://github.com/stellar/x402-stellar) settlements, cross-references them against spending-limit policy state, and raises breach/near-miss alerts via a dashboard and webhook.
 
 ## What this repo is NOT
 
@@ -63,11 +63,48 @@ Create a `.env.local` file in the project root (or set on your hosting platform)
 | `SOROBAN_RPC_URL` | yes | — | Soroban RPC endpoint (testnet/mainnet) |
 | `NETWORK_PASSPHRASE` | yes | — | Stellar network passphrase, e.g. `Test SDF Network ; September 2015` |
 | `POLICY_VIEW_HELPER_CONTRACT_ID` | yes | — | Deployed policy-view-helper contract ID |
-| `X402_FACILITATOR_CONTRACT_ID` | yes | — | The x402 facilitator contract being monitored |
+| `X402_ASSET_CONTRACT_ID` | yes | — | SEP-41 asset contract carrying x402 settlements (testnet USDC: `CBIELTK6YBZJU5UP2WWQEUCYKLPU6AUNZ2BQ4WWFEIE3USCIHMXQDAMA`) |
+| `X402_SMART_ACCOUNT_CONTRACT_IDS` | no | (empty) | Comma-separated OpenZeppelin smart-account contract IDs monitored for `spending_limit_enforced` events (per-user deployments) |
+| `SIMULATION_SOURCE_ACCOUNT` | no | asset contract ID | Funded G… account used as the source for read-only policy simulations (must exist on the network; a contract ID is not a valid account) |
 | `DATABASE_URL` | yes | — | Postgres connection string |
 | `NEAR_MISS_THRESHOLD_PCT` | no | `90` | % of cap that triggers a near-miss alert |
 | `WEBHOOK_TIMEOUT_MS` | no | `5000` | Timeout for webhook POST requests |
 | `POLL_INTERVAL_MS` | no | `10000` | Event polling interval in milliseconds |
+
+## A note on the x402 facilitator
+
+There is **no on-chain "x402 facilitator contract"**. The Built-on-Stellar x402
+facilitator is an off-chain HTTP service (OpenZeppelin Relayer + x402
+Facilitator Plugin) at `https://channels.openzeppelin.com/x402/testnet`.
+
+SpendGuard therefore monitors the real on-chain events that make up an x402
+settlement instead:
+
+1. **SEP-41 `transfer` events** on the configured asset contract
+   (topics `["transfer", from, to]`, data = amount) — the actual payment.
+   Testnet USDC: `CBIELTK6YBZJU5UP2WWQEUCYKLPU6AUNZ2BQ4WWFEIE3USCIHMXQDAMA`.
+2. **OpenZeppelin smart-account `spending_limit_enforced` events**
+   (topics `["spending_limit_enforced", smart_account]`, data map with
+   `context_rule_id`, `amount`, `total_spent_in_period`) — the
+   policy-enforcing spend. Smart accounts are per-user deployments, so
+   there is no single public testnet address; supply your own via
+   `X402_SMART_ACCOUNT_CONTRACT_IDS`.
+
+## Testing note: real on-chain golden fixture
+
+The indexer's event-decoder tests (`indexer/test/event-decode.test.ts`)
+include a real on-chain golden fixture captured from the testnet RPC, so
+the XDR value decoder is exercised against actual chain bytes, not just
+SDK-encoder-generated XDR.
+
+**TODO: golden fixture test against a real on-chain transfer event, once
+testnet USDC has activity.** As of 2026-07-31 the SDF testnet had no
+SEP-41-shaped (`["transfer", from, to]`) transfer events in the ~7-day RPC
+retention window — USDC (`CBIELTK6Y…`) and the XLM SAC (`CDLZFC3S…`) were
+both idle — so the current fixture is the closest real event available
+(single-topic, map-formatted value) and only pins the value-decoding path.
+When testnet USDC (or any SEP-41 token) emits a real transfer, replace it
+with a full 3-topic event to also pin topic decoding against chain data.
 
 ## Deployment
 
