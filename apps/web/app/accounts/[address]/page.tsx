@@ -118,7 +118,7 @@ async function AccountContent({ address }: { address: string }) {
 
       {/* Spend chart */}
       <div className="mb-8">
-        <SpendChart address={address} contextRuleId={account.contextRuleId} />
+        <SpendChart address={address} />
       </div>
 
       {/* Alert history */}

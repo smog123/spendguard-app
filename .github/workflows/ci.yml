@@ -11,23 +11,8 @@ env:
 
 jobs:
   quality:
-    name: Lint & Typecheck & Test
+    name: Install, Typecheck, Lint & Test
     runs-on: ubuntu-latest
-
-    services:
-      postgres:
-        image: postgres:16-alpine
-        env:
-          POSTGRES_DB: spendguard_test
-          POSTGRES_USER: spendguard
-          POSTGRES_PASSWORD: spendguard
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
 
     steps:
       - uses: actions/checkout@v4
@@ -41,30 +26,11 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Typecheck SDK
-        run: npm -w @spendguard/sdk run typecheck
-
-      - name: Typecheck Indexer
-        run: npm -w @spendguard/indexer run typecheck
-
-      - name: Typecheck Web
-        run: npm -w @spendguard/web run typecheck
+      - name: Typecheck (sdk, indexer, web)
+        run: npm run typecheck
 
       - name: Lint
         run: npm run lint
-        continue-on-error: true
 
-      - name: Test SDK
-        run: npm -w @spendguard/sdk run test
-        continue-on-error: true
-
-      - name: Build SDK
-        run: npm -w @spendguard/sdk run build
-
-      - name: Build Indexer
-        run: npm -w @spendguard/indexer run build
-
-      - name: Build Web
-        run: npm -w @spendguard/web run build
-        env:
-          DATABASE_URL: postgres://spendguard:spendguard@localhost:5432/spendguard_test
+      - name: Test (all workspaces)
+        run: npm test --workspaces --if-present

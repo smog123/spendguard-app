@@ -9,10 +9,9 @@ interface SpendDataPoint {
 
 interface SpendChartProps {
   address: string;
-  contextRuleId: number;
 }
 
-export function SpendChart({ address, contextRuleId }: SpendChartProps) {
+export function SpendChart({ address }: SpendChartProps) {
   const [data, setData] = useState<SpendDataPoint[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
