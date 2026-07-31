@@ -32,13 +32,36 @@ function optionalIntEnv(name: string, defaultValue: number): number {
   return parsed;
 }
 
+/**
+ * Parse a comma-separated list env var into a trimmed, non-empty string
+ * array. Returns an empty array when the var is unset or blank.
+ */
+function optionalListEnv(name: string): string[] {
+  const raw = process.env[name];
+  if (!raw || raw.trim().length === 0) {
+    return [];
+  }
+  return raw
+    .split(",")
+    .map((item) => item.trim())
+    .filter((item) => item.length > 0);
+}
+
 // ── Config shape ──────────────────────────────────────────────────────
 
 export interface IndexerConfig {
   sorobanRpcUrl: string;
   networkPassphrase: string;
   policyViewHelperContractId: string;
-  x402FacilitatorContractId: string;
+  /** SEP-41 asset contract that carries x402 settlements (e.g. testnet USDC). */
+  x402AssetContractId: string;
+  /** OpenZeppelin smart-account contracts monitored for spend events. */
+  x402SmartAccountContractIds: string[];
+  /**
+   * Funded G… account used as the source for read-only simulations.
+   * Must exist on the network; defaults to the asset contract ID.
+   */
+  simulationSourceAccount: string;
   databaseUrl: string;
   nearMissThresholdPct: number;
   webhookTimeoutMs: number;
@@ -48,11 +71,15 @@ export interface IndexerConfig {
 // ── Loader ────────────────────────────────────────────────────────────
 
 export function loadConfig(): IndexerConfig {
+  const x402AssetContractId = requireEnv("X402_ASSET_CONTRACT_ID");
   return {
     sorobanRpcUrl: requireEnv("SOROBAN_RPC_URL"),
     networkPassphrase: requireEnv("NETWORK_PASSPHRASE"),
     policyViewHelperContractId: requireEnv("POLICY_VIEW_HELPER_CONTRACT_ID"),
-    x402FacilitatorContractId: requireEnv("X402_FACILITATOR_CONTRACT_ID"),
+    x402AssetContractId,
+    x402SmartAccountContractIds: optionalListEnv("X402_SMART_ACCOUNT_CONTRACT_IDS"),
+    simulationSourceAccount:
+      process.env.SIMULATION_SOURCE_ACCOUNT?.trim() || x402AssetContractId,
     databaseUrl: requireEnv("DATABASE_URL"),
     nearMissThresholdPct: optionalIntEnv("NEAR_MISS_THRESHOLD_PCT", 90),
     webhookTimeoutMs: optionalIntEnv("WEBHOOK_TIMEOUT_MS", 5000),

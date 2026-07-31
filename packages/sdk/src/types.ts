@@ -10,7 +10,21 @@ export interface RawContractEvent {
   timestamp: number | null;
 }
 
-/** Decoded x402 settlement event produced by the facilitator contract. */
+/**
+ * Decoded x402 settlement event.
+ *
+ * Produced from one of two real on-chain event sources:
+ *  - SEP-41 token `transfer` events on the monitored asset contract
+ *    (topics: ["transfer", from, to]; data: amount) — the actual payment.
+ *  - OpenZeppelin smart-account `spending_limit_enforced` events
+ *    (topics: ["spending_limit_enforced", smart_account]; data map with
+ *    context, context_rule_id, amount, total_spent_in_period) — the
+ *    policy-enforcing spend.
+ *
+ * Note: the x402 "facilitator" is an off-chain service (OpenZeppelin
+ * Relayer + x402 Facilitator Plugin), not an on-chain contract, so there
+ * is no facilitator contract event to decode.
+ */
 export interface X402SettlementEvent {
   /** Unique event identifier (RPC-provided). */
   id: string;
@@ -18,15 +32,15 @@ export interface X402SettlementEvent {
   ledger: number;
   /** Unix timestamp (seconds) if the RPC provider includes it, else null. */
   timestamp: number | null;
-  /** The smart account address that authorised the spend. */
+  /** The account that authorised the spend (SEP-41 `from` or smart account). */
   account: string;
-  /** The x402 facilitator contract that processed the settlement. */
-  facilitatorContractId: string;
+  /** The on-chain contract that emitted this event (asset or smart account). */
+  sourceContractId: string;
   /** Amount of the native asset spent, in stroops (1 XLM = 10^7 stroops). */
   amountSpent: bigint;
   /** Context rule ID this spend was matched against. */
   contextRuleId: number;
-  /** Optional invoice / memo reference. */
+  /** Optional invoice / memo reference (SEP-41 `to` for transfer events). */
   reference: string | null;
 }
 

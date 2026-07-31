@@ -134,7 +134,8 @@ async function main(): Promise<void> {
   log("INFO", "Configuration loaded", {
     sorobanRpcUrl: config.sorobanRpcUrl,
     policyContract: config.policyViewHelperContractId,
-    facilitatorContract: config.x402FacilitatorContractId,
+    assetContract: config.x402AssetContractId,
+    smartAccountContracts: config.x402SmartAccountContractIds,
     nearMissThresholdPct: config.nearMissThresholdPct,
   });
 
@@ -155,16 +156,19 @@ async function main(): Promise<void> {
     networkPassphrase: config.networkPassphrase,
   });
 
-  // 4. Create policy reader (simulation source: a known public account —
-  //    we use the facilitator contract ID as a simulation source; the
-  //    actual source account used for simulations doesn't affect read-only
-  //    contract calls as long as it exists on the network).
+  // 4. Create policy reader. Read-only simulations need a source account
+  //    that exists on the network (getAccount is called on it), so a funded
+  //    G… account must be supplied via SIMULATION_SOURCE_ACCOUNT; a contract
+  //    ID is not a valid account and would fail at runtime.
+  if (!process.env.SIMULATION_SOURCE_ACCOUNT) {
+    log("WARN", "SIMULATION_SOURCE_ACCOUNT is not set; falling back to the " +
+      "asset contract ID. Policy reads will fail unless a funded G… " +
+      "account is configured.");
+  }
   const policyReader = new PolicyReader(
     sorobanClient,
     config.policyViewHelperContractId,
-    // Use a common test account for simulations; this is a read-only call,
-    // no signing or fees involved.
-    config.x402FacilitatorContractId,
+    config.simulationSourceAccount,
   );
 
   // 5. Create breach detector and alert dispatcher
@@ -179,7 +183,8 @@ async function main(): Promise<void> {
   const poller = new EventPoller(
     sorobanClient,
     db,
-    config.x402FacilitatorContractId,
+    config.x402AssetContractId,
+    config.x402SmartAccountContractIds,
     config.pollIntervalMs,
   );
 

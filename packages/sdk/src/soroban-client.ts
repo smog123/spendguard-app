@@ -86,12 +86,15 @@ export class SorobanClient {
         String(scValToNative(scv)),
       );
 
-      // Decode value: v16 SDK returns it as xdr.ScVal
+      // Preserve the raw base64 XDR of the event value so consumers can
+      // decode the exact ScVal shape (i128, map, etc.). v16 SDK returns
+      // entry.value as xdr.ScVal; scValToNative would flatten maps and
+      // lose type information, so we keep the raw encoding.
       let valueStr = "";
       try {
-        valueStr = String(scValToNative(entry.value));
-      } catch {
         valueStr = entry.value.toXDR("base64");
+      } catch {
+        valueStr = "";
       }
 
       events.push({

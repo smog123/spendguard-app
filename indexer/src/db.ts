@@ -120,18 +120,18 @@ export class Database {
     id: string;
     ledger: number;
     account: string;
-    facilitatorContractId: string;
+    sourceContractId: string;
     amountSpent: bigint;
     contextRuleId: number;
     reference: string | null;
   }): Promise<void> {
     await this.sql`
       INSERT INTO settlement_events (
-        id, ledger, account, facilitator_contract_id,
+        id, ledger, account, source_contract_id,
         amount_spent, context_rule_id, reference, ingested_at
       ) VALUES (
         ${event.id}, ${event.ledger}, ${event.account},
-        ${event.facilitatorContractId}, ${event.amountSpent.toString()},
+        ${event.sourceContractId}, ${event.amountSpent.toString()},
         ${event.contextRuleId}, ${event.reference}, now()
       )
       ON CONFLICT (id) DO NOTHING
