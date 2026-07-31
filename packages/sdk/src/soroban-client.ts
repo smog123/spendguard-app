@@ -73,14 +73,9 @@ export class SorobanClient {
       limit: opts.maxEvents ?? 100,
     });
 
-    let latestLedger = opts.startLedger;
     const events: RawContractEvent[] = [];
 
     for (const entry of response.events) {
-      if (entry.ledger > latestLedger) {
-        latestLedger = entry.ledger;
-      }
-
       // Decode topic segments: v16 SDK returns them as xdr.ScVal[]
       const topics: string[] = entry.topic.map((scv: xdr.ScVal) =>
         String(scValToNative(scv)),
@@ -111,7 +106,12 @@ export class SorobanClient {
 
     return {
       events,
-      latestLedger,
+      // The cursor must track the RPC's own latestLedger, not the highest
+      // ledger seen in the returned events. When zero events match (the
+      // common idle case) an events-derived value would never advance past
+      // startLedger, leaving the persisted cursor stuck and re-scanning the
+      // same window on every poll.
+      latestLedger: response.latestLedger,
       cursor: response.cursor ?? null,
     };
   }
