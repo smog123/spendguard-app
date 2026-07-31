@@ -1,137 +1,198 @@
-# SpendGuard — Spending Limit Monitor
+# SpendGuard
 
-**SpendGuard** is an indexer and dashboard that continuously ingests Soroban events for [x402](https://github.com/stellar/x402-stellar) settlements, cross-references them against spending-limit policy state, and raises breach/near-miss alerts via a dashboard and webhook.
+**Policy-aware spend monitoring for x402 agentic payments on Stellar.**
 
-## What this repo is NOT
+SpendGuard watches settled on-chain transfers against the spending-limit
+policies agents have already declared on-chain (via OpenZeppelin's
+`stellar-accounts` smart account framework), and raises breach / near-miss
+alerts through a dashboard and webhook. It never sits in the payment path —
+it observes and reports, independent of whichever client the agent used to
+send the transaction.
 
-SpendGuard is **not** a policy engine. It is **not** an enforcement layer. It does **not** hold keys, sign transactions, or move funds. It reads public on-chain data and computes whether a spend pattern is approaching or has crossed a limit that is *already enforced on-chain* by [OpenZeppelin's smart account](https://docs.openzeppelin.com/contracts-stellar). If SpendGuard's alert is late or wrong, no funds are at risk as a direct result — the on-chain enforcement is the actual backstop.
+> Companion contract repo:
+> [spendguard-contract](https://github.com/smog123/spendguard-contract) —
+> the on-chain read helper this indexer queries for policy state.
 
-## Architecture
+---
+
+## 1) Why This Matters
+
+x402 lets autonomous agents move real money without a human approving each
+transaction. Spending-limit guardrails already exist at the contract level
+(OpenZeppelin's smart account policies), but nobody outside the account
+itself can see whether those limits are being approached or broken —
+there's no independent audit trail.
+
+SpendGuard adds a passive observation layer:
+
+- Indexes real on-chain transfer events, continuously (Soroban RPC only
+  retains ~7 days of history — this service ingests and persists as
+  events happen, it does not backfill after downtime)
+- Cross-references each transfer against the spending account's own
+  declared policy, read live from the deployed
+  [policy-view-helper](https://github.com/smog123/spendguard-contract)
+  contract
+- Flags breaches and near-misses (default: 90% of cap) via webhook and
+  dashboard
+- Never signs, custodies, or blocks anything — if SpendGuard is late or
+  wrong, no funds are at risk as a direct result; the real backstop is
+  the on-chain policy enforcement it's observing
+
+---
+
+## 2) Current Product Model
+
+1. Operator deploys `policy-view-helper` (see contract repo) and configures
+   which smart-account addresses to monitor.
+2. The indexer polls Soroban RPC continuously, persisting a ledger cursor
+   in Postgres so it never loses history to RPC's retention window.
+3. Each ingested transfer event is checked against that account's live
+   `spending_limit` policy state.
+4. Breaches and near-misses trigger a webhook POST and appear in the
+   dashboard's alert timeline.
+5. The dashboard shows monitored accounts, spend history, and alerts —
+   read-only, no transaction signing anywhere in this repo.
+
+---
+
+## 3) Architecture
 
 ```
-┌──────────────┐     ┌────────────────┐     ┌──────────────────┐
-│  Soroban RPC  │────▶│  Indexer        │────▶│  Postgres        │
-│  (getEvents)  │     │  (poll loop)    │     │  (event store)   │
-└──────────────┘     └────────────────┘     └──────────────────┘
-                            │                        │
-                            ▼                        ▼
-                     ┌──────────────┐        ┌──────────────┐
-                     │ Policy       │        │ Next.js       │
-                     │ View Helper  │        │ Dashboard     │
-                     │ (read-only)  │        │ + API Routes  │
-                     └──────────────┘        └──────────────┘
+packages/sdk/       Soroban RPC client, policy reads, XDR helpers
+indexer/             Long-running event-ingest service + breach detector
+apps/web/            Next.js dashboard (read-only)
 ```
 
-### Components
+- **Indexer runs as a persistent process**, not a serverless function —
+  Soroban RPC's ~7-day event retention means continuous polling is a hard
+  requirement, not an optimization.
+- **Postgres** is the event/cursor store; the dashboard's API routes read
+  from the same database.
+- **No custody, no signing, no transaction submission** anywhere in this
+  repo — verified by design, not just by convention (see Known
+  Limitations).
 
-| Package | Description |
-|---|---|
-| `@spendguard/sdk` | Shared types, Soroban RPC client, policy reader, XDR helpers |
-| `@spendguard/indexer` | Long-running ingest loop: polls events, decodes settlements, detects breaches, dispatches webhooks |
-| `@spendguard/web` | Next.js 15 dashboard: monitored accounts list, per-account detail, spend chart, alert history |
+---
 
-## Prerequisites
+## 4) Local Setup
 
-- **Node.js** >= 18.18.0
-- **npm** >= 9
-- **Postgres** >= 15 (for the indexer event store)
+### Requirements
 
-## Quick Start
+- Node.js >= 18.18.0 (npm workspaces; CI runs Node 22 LTS)
+- PostgreSQL 15+ (16 used in local development)
+- A deployed instance of
+  [`policy-view-helper`](https://github.com/smog123/spendguard-contract)
+  (testnet or mainnet)
+
+### Start
 
 ```bash
-# 1. Clone and install
-git clone <repo-url> spendguard-app
-cd spendguard-app
 npm install
-
-# 2. Set environment variables
-# Copy the example below and fill in your values
-
-# 3. Run the indexer (long-running process)
-npm -w @spendguard/indexer run dev
-
-# 4. Run the web dashboard (in another terminal)
-npm -w @spendguard/web run dev
+# create .env.local from the table in section 5 (no .env.example is shipped)
+npm run build
+npm -w @spendguard/indexer run dev   # indexer: watch + run via tsx
+npm -w @spendguard/web run dev       # dashboard: next dev (separate terminal)
 ```
 
-## Environment Variables
+---
 
-Create a `.env.local` file in the project root (or set on your hosting platform):
+## 5) Environment Variables
 
-| Variable | Required | Default | Description |
-|---|---|---|---|
-| `SOROBAN_RPC_URL` | yes | — | Soroban RPC endpoint (testnet/mainnet) |
-| `NETWORK_PASSPHRASE` | yes | — | Stellar network passphrase, e.g. `Test SDF Network ; September 2015` |
-| `POLICY_VIEW_HELPER_CONTRACT_ID` | yes | — | Deployed policy-view-helper contract ID |
-| `X402_ASSET_CONTRACT_ID` | yes | — | SEP-41 asset contract carrying x402 settlements (testnet USDC: `CBIELTK6YBZJU5UP2WWQEUCYKLPU6AUNZ2BQ4WWFEIE3USCIHMXQDAMA`) |
-| `X402_SMART_ACCOUNT_CONTRACT_IDS` | no | (empty) | Comma-separated OpenZeppelin smart-account contract IDs monitored for `spending_limit_enforced` events (per-user deployments) |
-| `SIMULATION_SOURCE_ACCOUNT` | no | asset contract ID | Funded G… account used as the source for read-only policy simulations (must exist on the network; a contract ID is not a valid account) |
-| `DATABASE_URL` | yes | — | Postgres connection string |
-| `NEAR_MISS_THRESHOLD_PCT` | no | `90` | % of cap that triggers a near-miss alert |
-| `WEBHOOK_TIMEOUT_MS` | no | `5000` | Timeout for webhook POST requests |
-| `POLL_INTERVAL_MS` | no | `10000` | Event polling interval in milliseconds |
+| Variable | Required | Notes |
+|---|---|---|
+| `SOROBAN_RPC_URL` | yes | e.g. `https://soroban-testnet.stellar.org` |
+| `NETWORK_PASSPHRASE` | yes | must match the RPC network exactly |
+| `POLICY_VIEW_HELPER_CONTRACT_ID` | yes | from the contract repo's deployment |
+| `X402_ASSET_CONTRACT_ID` | yes | the SEP-41 token contract being monitored (e.g. testnet USDC) |
+| `DATABASE_URL` | yes | Postgres connection string |
+| `SIMULATION_SOURCE_ACCOUNT` | no, defaults to `X402_ASSET_CONTRACT_ID` | funded G… account used for read-only contract simulation calls; a contract ID is not a valid account, so set this for policy reads to work |
+| `NEAR_MISS_THRESHOLD_PCT` | no, default `90` | percent of cap that triggers a near-miss alert |
+| `WEBHOOK_TIMEOUT_MS` | no, default `5000` | webhook POST timeout |
+| `POLL_INTERVAL_MS` | no, default `10000` | event polling interval in milliseconds |
+| `X402_SMART_ACCOUNT_CONTRACT_IDS` | no, default (empty) | comma-separated OpenZeppelin smart-account contract IDs monitored for `spending_limit_enforced` events |
 
-## A note on the x402 facilitator
+---
 
-There is **no on-chain "x402 facilitator contract"**. The Built-on-Stellar x402
-facilitator is an off-chain HTTP service (OpenZeppelin Relayer + x402
-Facilitator Plugin) at `https://channels.openzeppelin.com/x402/testnet`.
+## 6) Scripts
 
-SpendGuard therefore monitors the real on-chain events that make up an x402
-settlement instead:
+```
+npm run build                          # builds sdk, indexer, web
+npm -w @spendguard/indexer run dev     # indexer: tsx watch
+npm -w @spendguard/web run dev         # dashboard: next dev
+npm run typecheck                      # tsc --noEmit across all three projects
+npm run lint                           # eslint (flat config)
+npm test --workspaces --if-present     # vitest in workspaces that define tests
 
-1. **SEP-41 `transfer` events** on the configured asset contract
-   (topics `["transfer", from, to]`, data = amount) — the actual payment.
-   Testnet USDC: `CBIELTK6YBZJU5UP2WWQEUCYKLPU6AUNZ2BQ4WWFEIE3USCIHMXQDAMA`.
-2. **OpenZeppelin smart-account `spending_limit_enforced` events**
-   (topics `["spending_limit_enforced", smart_account]`, data map with
-   `context_rule_id`, `amount`, `total_spent_in_period`) — the
-   policy-enforcing spend. Smart accounts are per-user deployments, so
-   there is no single public testnet address; supply your own via
-   `X402_SMART_ACCOUNT_CONTRACT_IDS`.
+# After `npm run build`, run the compiled indexer instead of the watcher:
+npm -w @spendguard/indexer run start   # node indexer/dist/main.js
+```
 
-## Testing note: real on-chain golden fixture
+---
 
-The indexer's event-decoder tests (`indexer/test/event-decode.test.ts`)
-include a real on-chain golden fixture captured from the testnet RPC, so
-the XDR value decoder is exercised against actual chain bytes, not just
-SDK-encoder-generated XDR.
+## 7) API / Module Reference
 
-**TODO: golden fixture test against a real on-chain transfer event, once
-testnet USDC has activity.** As of 2026-07-31 the SDF testnet had no
-SEP-41-shaped (`["transfer", from, to]`) transfer events in the ~7-day RPC
-retention window — USDC (`CBIELTK6Y…`) and the XLM SAC (`CDLZFC3S…`) were
-both idle — so the current fixture is the closest real event available
-(single-topic, map-formatted value) and only pins the value-decoding path.
-When testnet USDC (or any SEP-41 token) emits a real transfer, replace it
-with a full 3-topic event to also pin topic decoding against chain data.
+### SDK (`packages/sdk`)
 
-## Deployment
+- `soroban-client.ts` — RPC wrapper (`getEvents`, `getLatestLedger`,
+  `simulateContract`)
+- `policy-reader.ts` — reads live `spending_limit` policy state from the
+  deployed contract via `simulateTransaction`
+- `xdr-helpers.ts` — strongly-typed wrappers around `nativeToScVal` /
+  `scValToNative`; no hand-rolled XDR byte manipulation
 
-### Indexer (long-running process)
+### Indexer (`indexer/`)
 
-The indexer is **not** a serverless function — it holds an open polling loop and a persistent DB connection. Deploy it to:
+- `event-poller.ts` — continuous polling loop, persists ledger cursor
+- `breach-detector.ts` — compares transfer events against policy caps
+- `alert-dispatcher.ts` — webhook delivery on breach/near-miss
 
-- [Render](https://render.com) (Web Service)
-- [Railway](https://railway.app)
-- A VPS / dedicated host
+### Web (`apps/web`)
 
-### Web Dashboard
+- `/` — monitored accounts overview
+- `/accounts/[address]` — per-account spend history and alert timeline
+- `/api/accounts` — CRUD for monitored accounts
+- `/api/webhooks` — webhook endpoint configuration
 
-The Next.js app can be deployed to:
+---
 
-- [Vercel](https://vercel.com) (recommended)
-- [Netlify](https://netlify.com)
-- Any Node.js host
+## 8) Known Limitations (Current)
 
-## Contributing
+1. **No real on-chain golden-fixture test yet.** Testnet's monitored asset
+   contract has had no transfer activity in the ~7-day RPC retention
+   window since this project began — the plan to add one once real
+   activity exists is noted in `indexer/test/event-decode.test.ts`.
+   Current tests validate the encode/decode round-trip and pin the
+   value-decoding path against one captured real on-chain value; they do
+   not yet cover a live, full real-chain event end-to-end.
+2. **No monitored accounts configured by default.** The indexer runs
+   correctly against zero accounts (verified live: cursor advances, no
+   errors, zero false alerts) — this is a deliberately empty starting
+   state, not a bug.
+3. **Only `spending_limit`-policy accounts are supported.** OZ's other
+   policy types (`simple_threshold`, `weighted_threshold`) aren't read by
+   this indexer in the current MVP.
+4. **`spending_limit`'s own scope is transfer-context only** (an upstream
+   OpenZeppelin constraint, not a SpendGuard limitation) — non-transfer
+   contract calls aren't covered by the policy this tool observes.
+5. **`apps/web` has no automated test coverage yet** — SDK and indexer
+   are tested; the dashboard is not.
 
-See [CONTRIBUTING.md](./CONTRIBUTING.md).
+SpendGuard is intentionally scoped to prove policy-aware, real on-chain
+observability first, not full production hardening.
 
-## Security
+---
 
-See [SECURITY.md](./SECURITY.md).
+## 9) Practical Next Steps
 
-## License
+- Add the real on-chain golden-fixture test once testnet activity exists.
+- Add automated dashboard test coverage.
+- Support additional OZ policy types (`simple_threshold`,
+  `weighted_threshold`).
+- Expand CI to run the workspace build steps (the workflow currently
+  covers install, typecheck, lint, and tests, but not the full build).
+
+---
+
+## 10) License
 
 MIT
