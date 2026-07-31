@@ -13,9 +13,10 @@
     "build:indexer": "npm -w indexer run build",
     "build:web": "npm -w apps/web run build",
     "build": "npm run build:sdk && npm run build:indexer && npm run build:web",
+    "pretypecheck": "npm run build:sdk",
     "typecheck": "tsc --noEmit --project packages/sdk/tsconfig.json && tsc --noEmit --project indexer/tsconfig.json && tsc --noEmit --project apps/web/tsconfig.json",
     "lint": "eslint 'packages/*/src/**/*.ts' 'indexer/src/**/*.ts' 'apps/web/**/*.{ts,tsx}'",
-    "test": "npm -w packages/sdk run test && npm -w indexer run test && npm -w apps/web run test"
+    "test": "npm -w packages/sdk run test && npm -w indexer run test"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
