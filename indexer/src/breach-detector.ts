@@ -93,8 +93,10 @@ export class BreachDetector {
 
       const raisedAt = new Date().toISOString();
 
-      // Check for breach (spent >= cap)
-      if (state.spentInWindow >= state.cap) {
+      // Check for breach (spent >= cap). A cap of 0 means no limit is
+      // configured, so it can never be breached (mirrors the near-miss
+      // guard below).
+      if (state.cap > 0n && state.spentInWindow >= state.cap) {
         const alert: SpendAlert = {
           id: alertId(event.account, event.contextRuleId, event.triggerLedger, "breach"),
           account: event.account,

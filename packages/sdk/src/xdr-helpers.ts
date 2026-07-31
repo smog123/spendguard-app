@@ -61,6 +61,11 @@ export function scValToU64(scv: xdr.ScVal): bigint {
  *   window_started_at (u64)
  */
 export function decodeSpendingLimitView(scv: xdr.ScVal): SpendingLimitView {
+  // Guard on the switch first: calling scv.map() on a non-map ScVal throws
+  // a terse SDK error ("map not set") instead of returning undefined.
+  if (scv.switch() !== xdr.ScValType.scvMap()) {
+    throw new Error("SpendingLimitView ScVal is not a map");
+  }
   const map = scv.map();
   if (!map) {
     throw new Error("SpendingLimitView ScVal is not a map");
