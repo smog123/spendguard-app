@@ -49,6 +49,27 @@ function log(level: "INFO" | "WARN" | "ERROR", msg: string, meta?: unknown): voi
   console.log(`[${ts}] [${level}] [EventPoller] ${msg}${metaStr}`);
 }
 
+/**
+ * Serialize an unknown caught value into a readable log string.
+ *
+ * RPC errors from @stellar/stellar-sdk are plain objects (e.g.
+ * `{ code: -32602, message: "startLedger must be positive" }`), so
+ * `String(err)` yields the useless "[object Object]" — this extracts the
+ * real message and, failing that, JSON-serializes the object.
+ */
+function errorMessage(err: unknown): string {
+  if (err instanceof Error) return err.message;
+  if (typeof err === "object" && err !== null) {
+    try {
+      const json = JSON.stringify(err);
+      if (json) return json;
+    } catch {
+      // fall through to String(err)
+    }
+  }
+  return String(err);
+}
+
 // ── Topic filter constants ────────────────────────────────────────────
 //
 // getEvents topic filters must be passed as base64-encoded XDR ScVals
@@ -288,11 +309,15 @@ export class EventPoller {
     const cycleStart = Date.now();
 
     try {
-      // Resume from the persisted cursor, or derive a starting ledger
+      // Resume from the persisted cursor, or derive a starting ledger.
+      // A seeded-but-never-updated cursor (last_ledger = 0) is treated as
+      // absent: the RPC rejects startLedger=0 with "startLedger must be
+      // positive", so we fall back to (latestLedger - 100), clamped to >= 1.
       const cursor = await this.db.getCursor();
-      const startLedger: number = cursor
-        ? cursor.lastLedger
-        : Math.max(0, (await this.client.getLatestLedger()) - 100);
+      const startLedger: number =
+        cursor && cursor.lastLedger > 0
+          ? cursor.lastLedger
+          : Math.max(1, (await this.client.getLatestLedger()) - 100);
 
       log("INFO", "Polling events", {
         startLedger,
@@ -365,7 +390,7 @@ export class EventPoller {
         newCursorLedger: latestLedger,
       });
     } catch (err) {
-      log("ERROR", "Poll cycle failed", { error: String(err) });
+      log("ERROR", "Poll cycle failed", { error: errorMessage(err) });
       // Continue the loop despite errors — don't crash the indexer
     }
 
@@ -374,7 +399,7 @@ export class EventPoller {
     const delay = Math.max(100, this.pollIntervalMs - elapsed);
     this.pollTimeout = setTimeout(() => {
       this.pollCycle().catch((err) => {
-        log("ERROR", "Unhandled error in poll cycle", { error: String(err) });
+        log("ERROR", "Unhandled error in poll cycle", { error: errorMessage(err) });
       });
     }, delay);
   }
