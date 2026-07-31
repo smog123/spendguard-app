@@ -105,7 +105,9 @@ async function processNewEvents(
       account: row.account as string,
       contextRuleId: row.context_rule_id as number,
       amountSpent: BigInt(row.amount_spent as string),
-      triggerLedger: row.ledger as number,
+      // settlement_events.ledger is BIGINT, which postgres.js returns as a
+      // string; convert so the alert's triggerLedger is a real number.
+      triggerLedger: Number(row.ledger),
     });
 
     for (const a of alert) {

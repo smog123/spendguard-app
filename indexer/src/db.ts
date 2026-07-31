@@ -94,8 +94,11 @@ export class Database {
       WHERE id = 1
     `;
     if (rows.length === 0) return null;
+    // BIGINT columns come back from postgres.js as strings (to preserve
+    // precision); convert to number or the RPC rejects the startLedger
+    // with "cannot unmarshal string ... of type uint32".
     return {
-      lastLedger: rows[0]!.last_ledger as number,
+      lastLedger: Number(rows[0]!.last_ledger),
       lastEventId: (rows[0]!.last_event_id as string | null) ?? null,
     };
   }
