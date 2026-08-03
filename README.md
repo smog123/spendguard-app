@@ -10,7 +10,7 @@ it observes and reports, independent of whichever client the agent used to
 send the transaction.
 
 > Companion contract repo:
-> [spendguard-contract](https://github.com/smog123/spendguard-contract) —
+> [spendguard-contract](https://github.com/Spendguard/spendguard-contract) —
 > the on-chain read helper this indexer queries for policy state.
 
 ---
@@ -30,7 +30,7 @@ SpendGuard adds a passive observation layer:
   events happen, it does not backfill after downtime)
 - Cross-references each transfer against the spending account's own
   declared policy, read live from the deployed
-  [policy-view-helper](https://github.com/smog123/spendguard-contract)
+  [policy-view-helper](https://github.com/Spendguard/spendguard-contract)
   contract
 - Flags breaches and near-misses (default: 90% of cap) via webhook and
   dashboard
@@ -81,7 +81,7 @@ apps/web/            Next.js dashboard (read-only)
 - Node.js >= 18.18.0 (npm workspaces; CI runs Node 22 LTS)
 - PostgreSQL 15+ (16 used in local development)
 - A deployed instance of
-  [`policy-view-helper`](https://github.com/smog123/spendguard-contract)
+  [`policy-view-helper`](https://github.com/Spendguard/spendguard-contract)
   (testnet or mainnet)
 
 ### Start
