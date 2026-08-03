@@ -16,6 +16,9 @@
  * process host (Render, Railway, etc.).
  */
 
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import dotenv from "dotenv";
 import { SorobanClient, PolicyReader } from "@spendguard/sdk";
 import { loadConfig } from "./config.js";
 import { Database } from "./db.js";
@@ -129,6 +132,21 @@ async function processNewEvents(
 
 async function main(): Promise<void> {
   log("INFO", "Starting SpendGuard indexer");
+
+  // Load the repo-root .env.local file into process.env. The compiled
+  // output (dist/) and the source (src/) both sit two levels below the
+  // repo root, so resolve the path relative to this module — this works
+  // no matter which directory the process is launched from (npm workspace
+  // scripts, repo root, a process manager, etc.). Variables already
+  // exported in the environment always win — dotenv never overrides
+  // existing process.env entries.
+  const envFilePath = path.resolve(
+    path.dirname(fileURLToPath(import.meta.url)),
+    "..",
+    "..",
+    ".env.local",
+  );
+  dotenv.config({ path: envFilePath, quiet: true });
 
   // 1. Load configuration
   const config = loadConfig();

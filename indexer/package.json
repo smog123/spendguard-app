@@ -13,6 +13,7 @@
   "dependencies": {
     "@spendguard/sdk": "*",
     "@stellar/stellar-sdk": "^16.2.0",
+    "dotenv": "^16.6.1",
     "postgres": "^3.4.0"
   },
   "devDependencies": {
