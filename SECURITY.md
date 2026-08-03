@@ -17,9 +17,17 @@ The security posture of this project is therefore limited to:
 
 ## Reporting a Vulnerability
 
-If you discover a security vulnerability in SpendGuard, please **do not** open a public GitHub issue. Instead, send a private report to the maintainer.
+If you discover a security vulnerability in SpendGuard, please **do not** open a public GitHub issue. Instead, report it privately using GitHub's built-in Security Advisories feature:
+
+1. Navigate to **Settings > Security > Advisories > Report a vulnerability** for this repository (or go directly to <https://github.com/smog123/spendguard-app/security/advisories/new>).
+2. Fill in the report form with as much detail as possible (see "What to Include in a Report" below).
+3. Submit the report. It is visible only to the repository maintainers until it is either published or dismissed.
 
 We will acknowledge receipt within 48 hours and provide an estimated timeline for a fix.
+
+## Security Audit Status
+
+This project has **not** undergone a professional security audit. It is provided as-is, and no independent security review has been performed; please factor this into your own risk assessment before relying on it in production.
 
 ## What to Include in a Report
 
