@@ -16,7 +16,7 @@
     "pretypecheck": "npm run build:sdk",
     "typecheck": "tsc --noEmit --project packages/sdk/tsconfig.json && tsc --noEmit --project indexer/tsconfig.json && tsc --noEmit --project apps/web/tsconfig.json",
     "lint": "eslint 'packages/*/src/**/*.ts' 'indexer/src/**/*.ts' 'apps/web/**/*.{ts,tsx}'",
-    "test": "npm -w packages/sdk run test && npm -w indexer run test"
+    "test": "npm -w packages/sdk run test && npm -w indexer run test && npm -w apps/web run test"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.5",

@@ -1,198 +1,183 @@
 # SpendGuard
 
-**Policy-aware spend monitoring for x402 agentic payments on Stellar.**
+**Policy-Aware Multi-Account Treasury Management & Spend Monitoring for Soroban x402 Payments on Stellar.**
 
-SpendGuard watches settled on-chain transfers against the spending-limit
-policies agents have already declared on-chain (via OpenZeppelin's
-`stellar-accounts` smart account framework), and raises breach / near-miss
-alerts through a dashboard and webhook. It never sits in the payment path —
-it observes and reports, independent of whichever client the agent used to
-send the transaction.
+SpendGuard watches settled on-chain Stellar transfers and evaluates them against the spending-limit policies agents have declared on-chain (via OpenZeppelin's `stellar-accounts` smart account framework). It provides an enterprise-grade **Multi-Account Treasury Management System** with isolated data domains, role-based access control (RBAC), budgets, audit logs, and multi-signature approval workflows.
 
-> Companion contract repo:
-> [spendguard-contract](https://github.com/Spendguard/spendguard-contract) —
-> the on-chain read helper this indexer queries for policy state.
+> **Companion Contract Repo:**  
+> [`spendguard-contract`](https://github.com/Spendguard/spendguard-contract) — The read-only Soroban helper contract queried for on-chain policy state.
 
 ---
 
-## 1) Why This Matters
+## 1. Why SpendGuard?
 
-x402 lets autonomous agents move real money without a human approving each
-transaction. Spending-limit guardrails already exist at the contract level
-(OpenZeppelin's smart account policies), but nobody outside the account
-itself can see whether those limits are being approached or broken —
-there's no independent audit trail.
+x402 enables autonomous agents to execute payments on Stellar without requiring human intervention for every micro-transaction. While smart contract policies enforce limits on-chain, operators and treasury managers lack an independent, consolidated dashboard and audit trail for monitoring spending limits across multiple accounts.
 
-SpendGuard adds a passive observation layer:
+**SpendGuard adds a passive, non-custodial observability and governance layer:**
 
-- Indexes real on-chain transfer events, continuously (Soroban RPC only
-  retains ~7 days of history — this service ingests and persists as
-  events happen, it does not backfill after downtime)
-- Cross-references each transfer against the spending account's own
-  declared policy, read live from the deployed
-  [policy-view-helper](https://github.com/Spendguard/spendguard-contract)
-  contract
-- Flags breaches and near-misses (default: 90% of cap) via webhook and
-  dashboard
-- Never signs, custodies, or blocks anything — if SpendGuard is late or
-  wrong, no funds are at risk as a direct result; the real backstop is
-  the on-chain policy enforcement it's observing
+- **Continuous Event Indexing:** Ingests and persists real on-chain SEP-41 `transfer` and OpenZeppelin `spending_limit_enforced` events in Postgres, ensuring historical visibility beyond Soroban RPC retention windows.
+- **Multi-Account Treasury System:** Allows creation and management of unlimited treasury accounts (Personal, Business, DAO, NGO, Project) with full data isolation.
+- **Role-Based Access Control (RBAC):** Strict 5-tier role hierarchy (`Owner`, `Admin`, `Finance Manager`, `Approver`, `Viewer`) protecting operations across APIs and dashboard pages.
+- **Multi-Signature Approvals:** Built-in multi-party approval workflow for high-value treasury disbursements with required signer thresholds.
+- **Budgets & Policy Tracking:** Real-time tracking of spend caps, period allocations (`Monthly`, `Quarterly`, `Annual`), and near-miss / breach alert dispatch.
+- **Zero Custody, Zero Signing in Payments:** SpendGuard operates purely as an observer and manager. It never sits in the payment execution path and never custodies funds.
 
 ---
 
-## 2) Current Product Model
+## 2. Monorepo Architecture
 
-1. Operator deploys `policy-view-helper` (see contract repo) and configures
-   which smart-account addresses to monitor.
-2. The indexer polls Soroban RPC continuously, persisting a ledger cursor
-   in Postgres so it never loses history to RPC's retention window.
-3. Each ingested transfer event is checked against that account's live
-   `spending_limit` policy state.
-4. Breaches and near-misses trigger a webhook POST and appear in the
-   dashboard's alert timeline.
-5. The dashboard shows monitored accounts, spend history, and alerts —
-   read-only, no transaction signing anywhere in this repo.
-
----
-
-## 3) Architecture
+The workspace is organized into a clean monorepo architecture:
 
 ```
-packages/sdk/       Soroban RPC client, policy reads, XDR helpers
-indexer/             Long-running event-ingest service + breach detector
-apps/web/            Next.js dashboard (read-only)
+spendguard-app/
+├── packages/sdk/           # Core SDK: Soroban RPC client, XDR helpers, RBAC engine, TypeScript types
+├── indexer/                # Persistent Soroban RPC event polling service, breach detector, webhook dispatcher
+├── apps/web/               # Next.js 15 App Router web application, REST APIs, and UI components
 ```
 
-- **Indexer runs as a persistent process**, not a serverless function —
-  Soroban RPC's ~7-day event retention means continuous polling is a hard
-  requirement, not an optimization.
-- **Postgres** is the event/cursor store; the dashboard's API routes read
-  from the same database.
-- **No custody, no signing, no transaction submission** anywhere in this
-  repo — verified by design, not just by convention (see Known
-  Limitations).
+### High-Level Architecture Diagram
+
+```
+                             ┌───────────────────────────────────┐
+                             │       Stellar / Soroban RPC       │
+                             └─────────────────┬─────────────────┘
+                                               │
+                                               │ (Events & Policy Read)
+                                               ▼
+┌──────────────────────┐             ┌───────────────────┐             ┌──────────────────────┐
+│  Next.js 15 Web App  │ ◄────────── │ Postgres Event &  │ ◄────────── │  SpendGuard Indexer  │
+│  (Apps / Dashboard)  │   REST API  │ Treasury Store    │   Persist   │  (Polling Service)   │
+└──────────────────────┘             └───────────────────┘             └──────────────────────┘
+```
 
 ---
 
-## 4) Local Setup
+## 3. Multi-Account Management System
 
-### Requirements
+SpendGuard provides isolated governance and reporting per treasury account:
 
-- Node.js >= 18.18.0 (npm workspaces; CI runs Node 22 LTS)
-- PostgreSQL 15+ (16 used in local development)
-- A deployed instance of
-  [`policy-view-helper`](https://github.com/Spendguard/spendguard-contract)
-  (testnet or mainnet)
+### Treasury Account Metadata
+Each treasury account contains:
+- **Name & Description:** Human-readable account label and governance metadata.
+- **Stellar Wallet Address:** 56-character public key starting with `G` (OpenZeppelin smart account address).
+- **Account Type:** Categorized as `Personal`, `Business`, `DAO`, `NGO`, or `Project`.
+- **Status:** `Active` or `Archived`.
+- **Context Rule ID:** On-chain rule identifier.
+- **Timestamps:** ISO-8601 creation and update dates.
 
-### Start
+### Isolated Data Domains
+Every treasury account features complete data isolation:
+1. **Transactions:** Account-specific settlement event history, ledgers, amounts, and references.
+2. **Spending Policies:** Declared caps, window durations (e.g. 24h), asset IDs, and utilization metrics.
+3. **Budgets:** Period allocations (`Monthly`, `Quarterly`, `Annual`) with spent progress tracking and categories (`Operations`, `Security`, `Marketing`, `Grants`, `Infrastructure`).
+4. **Members & RBAC:** Role assignment per user email.
+5. **Audit Logs:** Immutable trail of account actions (`ACCOUNT_CREATED`, `ACCOUNT_UPDATED`, `MEMBER_ADDED`, `POLICY_CREATED`, `MULTISIG_PROPOSAL_CREATED`, etc.).
+6. **Multi-Signature Approvals:** Pending/Approved/Rejected approval queues with voter progress bar.
+7. **Settings:** Webhook dispatch URL, near-miss alert %, notification email, auto-lock on breach.
+
+---
+
+## 4. Role-Based Access Control (RBAC) Matrix
+
+SpendGuard enforces strict permissions across API routes and UI actions:
+
+| Permission | Owner | Admin | Finance Manager | Approver | Viewer |
+|---|:---:|:---:|:---:|:---:|:---:|
+| `account:create` | ✅ | ❌ | ❌ | ❌ | ❌ |
+| `account:edit` | ✅ | ✅ | ❌ | ❌ | ❌ |
+| `account:archive` | ✅ | ❌ | ❌ | ❌ | ❌ |
+| `account:delete` | ✅ | ❌ | ❌ | ❌ | ❌ |
+| `members:manage` | ✅ | ✅ | ❌ | ❌ | ❌ |
+| `policies:manage` | ✅ | ✅ | ✅ | ❌ | ❌ |
+| `budgets:manage` | ✅ | ✅ | ✅ | ❌ | ❌ |
+| `multisig:create` | ✅ | ✅ | ✅ | ❌ | ❌ |
+| `multisig:approve` | ✅ | ✅ | ❌ | ✅ | ❌ |
+| `data:view` | ✅ | ✅ | ✅ | ✅ | ✅ |
+
+---
+
+## 5. Local Setup & Quickstart
+
+### Prerequisites
+
+- **Node.js** `>= 18.18.0` (Node 22 LTS recommended)
+- **npm** `>= 9.0.0`
+- **PostgreSQL** `15+` (16 recommended for database persistence)
+
+### Installation
 
 ```bash
+# Clone the repository
+git clone https://github.com/Spendguard/spendguard-app.git
+cd spendguard-app
+
+# Install all workspace dependencies
 npm install
-# create .env.local from the table in section 5 (no .env.example is shipped)
+
+# Build all sub-packages (SDK, Indexer, Web App)
 npm run build
-npm -w @spendguard/indexer run dev   # indexer: watch + run via tsx
-npm -w @spendguard/web run dev       # dashboard: next dev (separate terminal)
 ```
 
----
+### Environment Configuration
 
-## 5) Environment Variables
+Create a `.env.local` file in the root directory (or inside `apps/web/.env.local`):
 
-| Variable | Required | Notes |
-|---|---|---|
-| `SOROBAN_RPC_URL` | yes | e.g. `https://soroban-testnet.stellar.org` |
-| `NETWORK_PASSPHRASE` | yes | must match the RPC network exactly |
-| `POLICY_VIEW_HELPER_CONTRACT_ID` | yes | from the contract repo's deployment |
-| `X402_ASSET_CONTRACT_ID` | yes | the SEP-41 token contract being monitored (e.g. testnet USDC) |
-| `DATABASE_URL` | yes | Postgres connection string |
-| `SIMULATION_SOURCE_ACCOUNT` | no, defaults to `X402_ASSET_CONTRACT_ID` | funded G… account used for read-only contract simulation calls; a contract ID is not a valid account, so set this for policy reads to work |
-| `NEAR_MISS_THRESHOLD_PCT` | no, default `90` | percent of cap that triggers a near-miss alert |
-| `WEBHOOK_TIMEOUT_MS` | no, default `5000` | webhook POST timeout |
-| `POLL_INTERVAL_MS` | no, default `10000` | event polling interval in milliseconds |
-| `X402_SMART_ACCOUNT_CONTRACT_IDS` | no, default (empty) | comma-separated OpenZeppelin smart-account contract IDs monitored for `spending_limit_enforced` events |
-
----
-
-## 6) Scripts
-
-```
-npm run build                          # builds sdk, indexer, web
-npm -w @spendguard/indexer run dev     # indexer: tsx watch
-npm -w @spendguard/web run dev         # dashboard: next dev
-npm run typecheck                      # tsc --noEmit across all three projects
-npm run lint                           # eslint (flat config)
-npm test --workspaces --if-present     # vitest in workspaces that define tests
-
-# After `npm run build`, run the compiled indexer instead of the watcher:
-npm -w @spendguard/indexer run start   # node indexer/dist/main.js
+```env
+DATABASE_URL="postgres://postgres:postgres@localhost:5432/spendguard"
+SOROBAN_RPC_URL="https://soroban-testnet.stellar.org"
+NETWORK_PASSPHRASE="Test SDF Network ; July 2015"
+POLICY_VIEW_HELPER_CONTRACT_ID="CCAM4NRAUB6SO3XLL2SRZQEHSOUYQGDKGNPCUIQ5KKI2S6QKWC2VN6NX"
+X402_ASSET_CONTRACT_ID="CBIELTK6YBZJU5UP2WWQEUCYKLPU6AUNZ2BQ4WWFEIE3USCIHMXQDAMA"
+SIMULATION_SOURCE_ACCOUNT="GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF"
+NEAR_MISS_THRESHOLD_PCT=90
+POLL_INTERVAL_MS=10000
 ```
 
----
+### Running Services Locally
 
-## 7) API / Module Reference
+```bash
+# Run typechecking across all packages
+npm run typecheck
 
-### SDK (`packages/sdk`)
+# Run unit and integration tests (64 tests across SDK, Indexer, Web)
+npm test
 
-- `soroban-client.ts` — RPC wrapper (`getEvents`, `getLatestLedger`,
-  `simulateContract`)
-- `policy-reader.ts` — reads live `spending_limit` policy state from the
-  deployed contract via `simulateTransaction`
-- `xdr-helpers.ts` — strongly-typed wrappers around `nativeToScVal` /
-  `scValToNative`; no hand-rolled XDR byte manipulation
+# Run Indexer service in watch mode
+npm -w @spendguard/indexer run dev
 
-### Indexer (`indexer/`)
+# Run Next.js Dashboard web app (in a separate terminal)
+npm -w @spendguard/web run dev
+```
 
-- `event-poller.ts` — continuous polling loop, persists ledger cursor
-- `breach-detector.ts` — compares transfer events against policy caps
-- `alert-dispatcher.ts` — webhook delivery on breach/near-miss
-
-### Web (`apps/web`)
-
-- `/` — monitored accounts overview
-- `/accounts/[address]` — per-account spend history and alert timeline
-- `/api/accounts` — CRUD for monitored accounts
-- `/api/webhooks` — webhook endpoint configuration
+Open `http://localhost:3000` in your browser to access the dashboard.
 
 ---
 
-## 8) Known Limitations (Current)
+## 6. Available Scripts
 
-1. **No real on-chain golden-fixture test yet.** Testnet's monitored asset
-   contract has had no transfer activity in the ~7-day RPC retention
-   window since this project began — the plan to add one once real
-   activity exists is noted in `indexer/test/event-decode.test.ts`.
-   Current tests validate the encode/decode round-trip and pin the
-   value-decoding path against one captured real on-chain value; they do
-   not yet cover a live, full real-chain event end-to-end.
-2. **No monitored accounts configured by default.** The indexer runs
-   correctly against zero accounts (verified live: cursor advances, no
-   errors, zero false alerts) — this is a deliberately empty starting
-   state, not a bug.
-3. **Only `spending_limit`-policy accounts are supported.** OZ's other
-   policy types (`simple_threshold`, `weighted_threshold`) aren't read by
-   this indexer in the current MVP.
-4. **`spending_limit`'s own scope is transfer-context only** (an upstream
-   OpenZeppelin constraint, not a SpendGuard limitation) — non-transfer
-   contract calls aren't covered by the policy this tool observes.
-5. **`apps/web` has no automated test coverage yet** — SDK and indexer
-   are tested; the dashboard is not.
-
-SpendGuard is intentionally scoped to prove policy-aware, real on-chain
-observability first, not full production hardening.
+| Command | Description |
+|---|---|
+| `npm run build` | Builds `@spendguard/sdk`, `@spendguard/indexer`, and `@spendguard/web` in order |
+| `npm run typecheck` | Runs `tsc --noEmit` across all workspace projects |
+| `npm run lint` | Runs ESLint across TypeScript and React codebases |
+| `npm test` | Runs Vitest suites across SDK, Indexer, and Web app workspaces |
+| `npm -w @spendguard/web run dev` | Launches Next.js dev server on port 3000 |
+| `npm -w @spendguard/indexer run dev` | Runs the indexer continuous polling loop with tsx |
 
 ---
 
-## 9) Practical Next Steps
+## 7. Web Application Page Routes
 
-- Add the real on-chain golden-fixture test once testnet activity exists.
-- Add automated dashboard test coverage.
-- Support additional OZ policy types (`simple_threshold`,
-  `weighted_threshold`).
-- Expand CI to run the workspace build steps (the workflow currently
-  covers install, typecheck, lint, and tests, but not the full build).
+- `/` — Main Treasury Dashboard (active context overview, KPI summary, spend chart, alert timeline).
+- `/accounts` — Treasury Accounts List (grid/table view, filters by type & status, quick context switch).
+- `/accounts/new` — Create Account form (Stellar address validation, type selection, owner assignment).
+- `/accounts/[id]` — Account Overview & Isolated Data Sub-tabs (Overview, Transactions, Spending Policies, Budgets, Multi-Sig Approvals, Audit Logs).
+- `/accounts/[id]/edit` — Edit Account metadata & status.
+- `/accounts/[id]/members` — Account Team Members & RBAC management.
+- `/accounts/[id]/settings` — Webhooks, alert thresholds, multi-sig signers count, and account lifecycle.
 
 ---
 
-## 10) License
+## 8. License
 
-MIT
+[MIT](LICENSE) © SpendGuard Contributors

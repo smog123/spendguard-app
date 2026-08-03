@@ -17,4 +17,12 @@ export {
 } from "./xdr-helpers.js";
 export type { ContractErrorCode } from "./xdr-helpers.js";
 
+export {
+  getRolePermissions,
+  hasPermission,
+  isValidStellarAddress,
+} from "./permissions.js";
+export type { Permission } from "./permissions.js";
+
 export type * from "./types.js";
+

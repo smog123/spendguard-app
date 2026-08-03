@@ -120,3 +120,97 @@ export interface MonitoredAccount {
   createdAt: string;
   updatedAt: string;
 }
+
+// ── Multi-Account Management System Types ──────────────────────────────
+
+export type AccountType = "Personal" | "Business" | "DAO" | "NGO" | "Project";
+export type AccountStatus = "Active" | "Archived";
+export type AccountRole = "Owner" | "Admin" | "Finance Manager" | "Approver" | "Viewer";
+
+export interface TreasuryAccount {
+  id: string;
+  name: string;
+  description: string;
+  address: string;
+  type: AccountType;
+  status: AccountStatus;
+  contextRuleId: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AccountMember {
+  id: string;
+  accountId: string;
+  email: string;
+  name: string;
+  role: AccountRole;
+  addedAt: string;
+}
+
+export interface SpendingPolicy {
+  id: string;
+  accountId: string;
+  name: string;
+  cap: bigint;
+  windowSeconds: bigint;
+  assetId: string;
+  status: "Active" | "Inactive";
+  createdAt: string;
+}
+
+export interface Budget {
+  id: string;
+  accountId: string;
+  name: string;
+  category: string;
+  allocatedAmount: bigint;
+  spentAmount: bigint;
+  period: "Monthly" | "Quarterly" | "Annual";
+  status: "Active" | "Exceeded" | "Closed";
+  createdAt: string;
+}
+
+export interface MultiSigApproval {
+  id: string;
+  proposalId: string;
+  approverEmail: string;
+  decision: "Approved" | "Rejected";
+  note: string | null;
+  timestamp: string;
+}
+
+export interface MultiSigProposal {
+  id: string;
+  accountId: string;
+  title: string;
+  description: string;
+  amount: bigint;
+  recipient: string;
+  requiredApprovals: number;
+  status: "Pending" | "Approved" | "Rejected";
+  createdBy: string;
+  createdAt: string;
+  approvals: MultiSigApproval[];
+}
+
+export interface AuditLog {
+  id: string;
+  accountId: string;
+  action: string;
+  actorEmail: string;
+  details: string;
+  ipAddress: string | null;
+  createdAt: string;
+}
+
+export interface AccountSettings {
+  accountId: string;
+  webhookUrl: string | null;
+  nearMissThresholdPct: number;
+  multisigThreshold: number;
+  notificationEmail: string | null;
+  autoLockOnBreach: boolean;
+  updatedAt: string;
+}
+

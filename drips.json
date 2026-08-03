@@ -1,0 +1,12 @@
+{
+  "name": "SpendGuard App",
+  "description": "Policy-aware spend monitoring and alerting layer for x402 agentic payments on Stellar.",
+  "dripsWaveEnabled": true,
+  "repository": "https://github.com/Spendguard/spendguard-app",
+  "ecosystem": "Stellar",
+  "maintainers": [
+    {
+      "github": "Spendguard"
+    }
+  ]
+}
