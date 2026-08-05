@@ -11,6 +11,7 @@ interface Transaction {
   contextRuleId: number;
   reference: string | null;
   timestamp: string;
+  flag: "ON-CHAIN" | "BREACH_EVENT" | "NEAR_MISS_EVENT" | null;
 }
 
 export function TransactionsTab({ address }: { address: string }) {
@@ -21,8 +22,25 @@ export function TransactionsTab({ address }: { address: string }) {
     async function load() {
       try {
         setLoading(true);
-        // Fetch account alerts & events
-        const res = await fetch(`/api/accounts?address=${address}&alerts=true`);
+
+        // Primary source: live ingested settlement events from the indexer
+        const eventsRes = await fetch(
+          `/api/accounts?address=${encodeURIComponent(address)}&events=true`,
+        );
+        if (eventsRes.ok) {
+          const events = (await eventsRes.json()) as Transaction[];
+          if (events.length > 0) {
+            setTransactions(
+              events.map((e) => ({ ...e, flag: "ON-CHAIN" as const })),
+            );
+            return;
+          }
+        }
+
+        // Fallback: alert events (breach / near-miss spend history)
+        const res = await fetch(
+          `/api/accounts?address=${encodeURIComponent(address)}&alerts=true`,
+        );
         if (res.ok) {
           const alerts = (await res.json()) as SpendAlert[];
           const txs: Transaction[] = alerts.map((a) => ({
@@ -31,7 +49,11 @@ export function TransactionsTab({ address }: { address: string }) {
             sourceContractId: a.account,
             amountSpent: String(a.eventAmount),
             contextRuleId: a.contextRuleId,
-            reference: a.level === "breach" ? "BREACH_EVENT" : "NEAR_MISS_EVENT",
+            reference: null,
+            flag:
+              a.level === "breach"
+                ? "BREACH_EVENT"
+                : "NEAR_MISS_EVENT",
             timestamp: a.raisedAt,
           }));
           setTransactions(txs);
@@ -92,12 +114,14 @@ export function TransactionsTab({ address }: { address: string }) {
               <td className="px-4 py-3">
                 <span
                   className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold ${
-                    tx.reference === "BREACH_EVENT"
+                    tx.flag === "BREACH_EVENT"
                       ? "bg-red-950 text-red-400 border border-red-800/50"
-                      : "bg-amber-950 text-amber-400 border border-amber-800/50"
+                      : tx.flag === "NEAR_MISS_EVENT"
+                        ? "bg-amber-950 text-amber-400 border border-amber-800/50"
+                        : "bg-blue-950 text-blue-400 border border-blue-800/50"
                   }`}
                 >
-                  {tx.reference}
+                  {tx.flag ?? tx.reference ?? "—"}
                 </span>
               </td>
               <td className="px-4 py-3 text-zinc-400 font-sans">{new Date(tx.timestamp).toLocaleString()}</td>

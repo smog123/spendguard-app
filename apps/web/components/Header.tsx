@@ -5,6 +5,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useAccount } from "@/context/AccountContext";
 import { AccountSwitcher } from "./AccountSwitcher";
+import { ThemeToggle } from "./ThemeToggle";
 
 export function Header() {
   const pathname = usePathname();
@@ -66,6 +67,9 @@ export function Header() {
         </div>
 
         <div className="flex items-center gap-3">
+          {/* Theme toggle */}
+          <ThemeToggle />
+
           {/* RBAC Role Switcher Simulator */}
           <div className="hidden sm:flex items-center gap-1.5 rounded-lg border border-zinc-800 bg-zinc-900/60 px-2 py-1">
             <span className="text-[11px] text-zinc-500 font-medium">Role:</span>

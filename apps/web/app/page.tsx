@@ -6,6 +6,7 @@ import { useAccount } from "@/context/AccountContext";
 import { AccountTypeBadge } from "@/components/AccountTypeBadge";
 import { SpendChart } from "@/components/SpendChart";
 import { AlertList } from "@/components/AlertList";
+import { LiveSpendingCard } from "@/components/LiveSpendingCard";
 import type { SpendAlert } from "@spendguard/sdk";
 
 export default function DashboardPage() {
@@ -78,6 +79,12 @@ export default function DashboardPage() {
           <div className="flex items-center gap-2 mb-1">
             <span className="text-xs font-bold uppercase tracking-wider text-emerald-400">Active Treasury</span>
             {activeAccount && <AccountTypeBadge type={activeAccount.type} />}
+            <span className="flex items-center gap-1 rounded-full border border-blue-700/50 bg-blue-950/40 px-2 py-0.5 text-[10px] font-bold text-blue-400">
+              <svg className="h-2.5 w-2.5" fill="currentColor" viewBox="0 0 20 20">
+                <path fillRule="evenodd" d="M10 18a8 8 0 1 0 0-16 8 8 0 0 0 0 16Zm.75-13a.75.75 0 0 0-1.5 0v5c0 .414.336.75.75.75h4a.75.75 0 0 0 0-1.5h-3.25V5Z" clipRule="evenodd" />
+              </svg>
+              STELLAR TESTNET
+            </span>
           </div>
           <h1 className="text-2xl font-extrabold tracking-tight text-white">
             {activeAccount ? activeAccount.name : "Dashboard"}
@@ -110,7 +117,7 @@ export default function DashboardPage() {
       </div>
 
       {/* KPI Cards for Active Account */}
-      <div className="grid gap-4 sm:grid-cols-4">
+      <div className="grid gap-4 sm:grid-cols-4 xl:grid-cols-5">
         <div className="rounded-2xl border border-zinc-800 bg-zinc-900/60 p-5 backdrop-blur-sm shadow-sm">
           <p className="text-[11px] font-bold uppercase tracking-wider text-zinc-400">Total Ingested Alerts</p>
           <p className="mt-1 text-3xl font-extrabold text-white">{alerts.length}</p>
@@ -127,6 +134,14 @@ export default function DashboardPage() {
           <p className="text-[11px] font-bold uppercase tracking-wider text-emerald-400">Total Accounts</p>
           <p className="mt-1 text-3xl font-extrabold text-emerald-400">{accounts.length}</p>
         </div>
+        {/* Live on-chain spending limit from Soroban testnet */}
+        {activeAccount && (
+          <LiveSpendingCard
+            address={activeAccount.address}
+            contextRuleId={activeAccount.contextRuleId}
+            refreshMs={30_000}
+          />
+        )}
       </div>
 
       {/* Active Account Spend History */}

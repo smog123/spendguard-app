@@ -72,11 +72,14 @@ function errorMessage(err: unknown): string {
 
 // ── Topic filter constants ────────────────────────────────────────────
 //
-// getEvents topic filters must be passed as base64-encoded XDR ScVals
-// (or "*" for a wildcard). We encode the Symbol ScVals we match on.
-
-const TRANSFER_TOPIC = xdr.ScVal.scvSymbol("transfer").toXDR("base64");
-const SPENDING_LIMIT_ENFORCED_TOPIC = xdr.ScVal.scvSymbol("spending_limit_enforced").toXDR("base64");
+// getEvents topic filters are NOT prefix-matched: every topic position in
+// the filter is compared against the event, so a short filter like
+// ["transfer"] never matches a 4-topic SEP-41 transfer event
+// ([transfer, from, to, asset]). Rather than hard-code topic shapes (and
+// break whenever a contract changes its event schema), we filter by
+// contract ID only and let decodeSettlementEvent below classify each
+// event by its first topic. decodeSettlementEvent already ignores
+// non-settlement events (approve, mint, burn, …).
 
 // ── Event decoders ────────────────────────────────────────────────────
 
@@ -337,14 +340,12 @@ export class EventPoller {
         {
           type: "contract",
           contractIds: [this.assetContractId],
-          topics: [[TRANSFER_TOPIC]],
         },
       ];
       if (this.smartAccountContractIds.length > 0) {
         filters.push({
           type: "contract",
           contractIds: this.smartAccountContractIds,
-          topics: [[SPENDING_LIMIT_ENFORCED_TOPIC]],
         });
       }
 

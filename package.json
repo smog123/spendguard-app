@@ -2,6 +2,7 @@
   "name": "spendguard-app",
   "version": "0.1.0",
   "private": true,
+  "license": "MIT",
   "description": "Monitoring layer for Soroban x402 spending limits — reads public on-chain data and computes whether a spend pattern is approaching or has crossed a limit enforced by OpenZeppelin's smart account.",
   "workspaces": [
     "packages/*",

@@ -1,57 +1,108 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 
 interface SpendDataPoint {
   date: string;
   amount: string;
+  ledger?: number;
 }
 
 interface SpendChartProps {
   address: string;
+  /** Auto-refresh interval in ms. Default 30 000 (30 s). */
+  refreshMs?: number;
 }
 
-export function SpendChart({ address }: SpendChartProps) {
-  const [data, setData] = useState<SpendDataPoint[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+const STROOPS_PER_TOKEN = 10_000_000n;
 
-  useEffect(() => {
-    async function loadData() {
-      try {
-        const baseUrl = process.env.NEXT_PUBLIC_VERCEL_URL
-          ? `https://${process.env.NEXT_PUBLIC_VERCEL_URL}`
-          : "http://localhost:3000";
-
-        const res = await fetch(
-          `${baseUrl}/api/accounts?address=${encodeURIComponent(address)}&alerts=true`,
-          { cache: "no-store" },
-        );
-        if (!res.ok) throw new Error("Failed to fetch data");
-        const alerts = await res.json();
-
-        // Build a simple spend timeline from alert data
-        const points: SpendDataPoint[] = (alerts as Array<{
-          raisedAt: string;
-          eventAmount: string;
-        }>).map((a) => ({
-          date: new Date(a.raisedAt).toLocaleDateString("en-US", {
+/**
+ * Load live spend history for an address.
+ *
+ * Primary source: ingested on-chain settlement events (the indexer's
+ * Postgres event store) — every real transfer shows up here. Falls back
+ * to raised alerts so the chart still renders spend history when the
+ * event store is unreachable.
+ */
+async function fetchSpendPoints(address: string): Promise<SpendDataPoint[]> {
+  // Primary source: ingested on-chain settlement events. A thrown fetch or
+  // an HTTP error both fall through to the alerts fallback below.
+  try {
+    const res = await fetch(
+      `/api/accounts?address=${encodeURIComponent(address)}&events=true`,
+      { cache: "no-store" },
+    );
+    if (res.ok) {
+      const events = (await res.json()) as {
+        timestamp: string;
+        amountSpent: string;
+        ledger: number;
+      }[];
+      if (events.length > 0) {
+        return events.map((e) => ({
+          date: new Date(e.timestamp).toLocaleDateString("en-US", {
             month: "short",
             day: "numeric",
           }),
-          amount: (BigInt(a.eventAmount) / BigInt(10_000_000)).toString(),
+          amount: (BigInt(e.amountSpent) / STROOPS_PER_TOKEN).toString(),
+          ledger: e.ledger,
         }));
-
-        setData(points);
-      } catch (err) {
-        setError(err instanceof Error ? err.message : "Unknown error");
-      } finally {
-        setLoading(false);
       }
     }
+  } catch {
+    // fall through to the alerts fallback
+  }
 
-    loadData();
+  // Fallback: alert events (breach / near-miss spend history)
+  try {
+    const alertsRes = await fetch(
+      `/api/accounts?address=${encodeURIComponent(address)}&alerts=true`,
+      { cache: "no-store" },
+    );
+    if (alertsRes.ok) {
+      const alerts = (await alertsRes.json()) as {
+        raisedAt: string;
+        eventAmount: string;
+      }[];
+      return alerts.map((a) => ({
+        date: new Date(a.raisedAt).toLocaleDateString("en-US", {
+          month: "short",
+          day: "numeric",
+        }),
+        amount: (BigInt(a.eventAmount) / STROOPS_PER_TOKEN).toString(),
+      }));
+    }
+  } catch {
+    // ignore — the chart renders its empty state
+  }
+
+  return [];
+}
+
+export function SpendChart({ address, refreshMs = 30_000 }: SpendChartProps) {
+  const [data, setData] = useState<SpendDataPoint[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+
+  const loadData = useCallback(async () => {
+    try {
+      const points = await fetchSpendPoints(address);
+      setData(points);
+      setLastUpdated(new Date());
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unknown error");
+    } finally {
+      setLoading(false);
+    }
   }, [address]);
+
+  useEffect(() => {
+    loadData();
+    const id = setInterval(loadData, refreshMs);
+    return () => clearInterval(id);
+  }, [loadData, refreshMs]);
 
   if (loading) {
     return (
@@ -73,12 +124,15 @@ export function SpendChart({ address }: SpendChartProps) {
   if (data.length === 0) {
     return (
       <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-6">
-        <h3 className="mb-4 text-sm font-medium text-zinc-400">
-          Spend History
-        </h3>
+        <div className="mb-4 flex items-center justify-between">
+          <h3 className="text-sm font-medium text-zinc-400">
+            Spend History (XLM / USDC)
+          </h3>
+        </div>
         <div className="flex h-48 items-center justify-center">
           <p className="text-sm text-zinc-600">
-            No spend events recorded yet for this account.
+            No spend events recorded yet for this account. Transfers the
+            indexer ingests from testnet will appear here in real time.
           </p>
         </div>
       </div>
@@ -93,15 +147,31 @@ export function SpendChart({ address }: SpendChartProps) {
 
   return (
     <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-6">
-      <h3 className="mb-4 text-sm font-medium text-zinc-400">
-        Spend History (XLM)
-      </h3>
+      <div className="mb-4 flex items-center justify-between">
+        <h3 className="text-sm font-medium text-zinc-400">
+          Spend History (XLM / USDC)
+        </h3>
+        <div className="flex items-center gap-2">
+          <span className="flex items-center gap-1.5 rounded-full border border-emerald-800/50 bg-emerald-950/40 px-2 py-0.5 text-[10px] font-semibold text-emerald-400">
+            <span className="relative flex h-1.5 w-1.5">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+              <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-500" />
+            </span>
+            LIVE
+          </span>
+          {lastUpdated && (
+            <span className="text-[10px] text-zinc-600">
+              {lastUpdated.toLocaleTimeString()}
+            </span>
+          )}
+        </div>
+      </div>
       <div className="flex h-48 items-end gap-2">
         {data.map((point, i) => {
           const height = (Number.parseFloat(point.amount) / maxAmount) * 100;
           return (
             <div
-              key={i}
+              key={`${point.date}-${i}`}
               className="group relative flex flex-1 flex-col items-center"
             >
               <div
@@ -109,7 +179,8 @@ export function SpendChart({ address }: SpendChartProps) {
                 style={{ height: `${Math.max(height, 4)}%` }}
               >
                 <div className="invisible absolute bottom-full mb-2 whitespace-nowrap rounded bg-zinc-800 px-2 py-1 text-xs text-zinc-300 shadow-lg group-hover:visible">
-                  {point.amount} XLM — {point.date}
+                  {point.amount} XLM/USDC — {point.date}
+                  {point.ledger ? ` · ledger #${point.ledger}` : ""}
                 </div>
               </div>
               <span className="mt-1 text-[10px] text-zinc-600">{point.date}</span>
@@ -117,6 +188,12 @@ export function SpendChart({ address }: SpendChartProps) {
           );
         })}
       </div>
+      {lastUpdated && (
+        <p className="mt-3 text-[10px] text-zinc-700">
+          {data.length} live on-chain event{data.length === 1 ? "" : "s"} · updated{" "}
+          {lastUpdated.toLocaleTimeString()}
+        </p>
+      )}
     </div>
   );
 }

@@ -2,11 +2,15 @@
   "name": "@spendguard/indexer",
   "version": "0.1.0",
   "private": true,
+  "license": "MIT",
   "type": "module",
   "scripts": {
     "build": "tsc",
     "start": "node dist/main.js",
     "dev": "tsx watch src/main.ts",
+    "monitor:account": "tsx src/scripts/monitor-account.ts",
+    "send:transfer": "tsx src/scripts/send-transfer.ts",
+    "trustline:usdc": "tsx src/scripts/trustline-usdc.ts",
     "typecheck": "tsc --noEmit",
     "test": "vitest run"
   },
